@@ -65,7 +65,7 @@ public:
   /** \brief Set/Get name list used to find the viewing application
    * @{
    */
-  static void SetExecutableName( const std::string & name );
+  static void SetExecutableNames( const std::vector<std::string> & names );
   static const std::vector<std::string> & GetExecutableNames();
   /**@}*/
 
@@ -124,8 +124,8 @@ public:
   /** \brief Set/Get file extension of the temporary image file (default='.nii')
    * @{
    */
-  void SetFileExtension( const std::string ext );
-  const std::string & GetFileExtention() const;
+  void SetFileExtension( const std::string & ext );
+  const std::string & GetFileExtension() const;
   /**@}*/
 
   /** \brief Set/Get Debug flag.
@@ -158,6 +158,7 @@ private:
   static std::vector<std::string> SearchPath;
   static std::vector<std::string> ExecutableNames;
   static std::string DefaultFileExtension;
+  static std::string DefaultApplication;
 
 
   std::string viewCommand;
@@ -167,7 +168,7 @@ private:
 
   std::string application;
 
-  std::string file_extension;
+  std::string fileExtension;
 
   std::string title;
   bool debugOn;
