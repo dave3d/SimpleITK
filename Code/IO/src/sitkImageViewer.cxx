@@ -54,6 +54,9 @@ namespace itk
 int ImageViewer::ViewerImageCount=0;
 bool ImageViewer::AreDefaultsInitialized=false;
 
+std::vector<std::string> SearchPath;
+std::vector<std::string> ExecutableNames;
+
 void ImageViewer::initializeDefaults()
   {
   if (AreDefaultsInitialized)
@@ -98,12 +101,68 @@ void ImageViewer::FindViewingApplication()
 
 const std::vector<std::string>& ImageViewer::GetSearchPath()
   {
+  return ImageViewer::SearchPath;
   }
 
 void ImageViewer::SetSearchPath( const std::vector<std::string> & path )
   {
   ImageViewer::SearchPath = path;
   FindViewingApplication();
+  }
+
+const std::vector<std::string>& ImageViewer::GetExecutableNames()
+  {
+  return ImageViewer::ExecutableNames;
+  }
+
+void ImageViewer::SetExecutableNames( const std::vector<std::string> & names )
+  {
+  ImageViewer::ExecutableNames = names;
+  FindViewingApplication();
+  }
+
+void ImageViewer::SetCommand(const std::string & command )
+  {
+  customCommand = command;
+  }
+
+const std::string & ImageViewer::GetCommand() const
+  {
+  if (customCommand.length() == 0)
+    {
+    return viewCommand;
+    }
+  return customCommand;
+  }
+
+void ImageViewer::SetFileExtension(const std::string & ext )
+  {
+  fileExtension = ext;
+  }
+
+const std::string & ImageViewer::GetFileExtension() const
+  {
+  return fileExtension;
+  }
+
+void ImageViewer::SetDebug( const bool dbg )
+  {
+  debugOn = dbg;
+  }
+
+bool ImageViewer::GetDebug() const
+  {
+  return debugOn;
+  }
+
+void ImageViewer::SetTitle(const std::string & t )
+  {
+  title = t;
+  }
+
+const std::string & ImageViewer::GetTitle() const
+  {
+  return title;
   }
 
   } // namespace simple
