@@ -115,6 +115,9 @@ public:
    *
    *  If the \c "%f" token is not found in the command string, the temporary file name is automatically
    *  appended to the command argument list.
+   *
+   *  Note: Using the ImageViewer::SetCommand method overrides the default command and/or any environment
+   *  variable setting such as SITK_SHOW_COMMAND, SITK_SHOW_COLOR_COMMAND and SITK_SHOW_3D_COMMAND.
    * @{
    */
   void SetCommand( const std::string & command );
