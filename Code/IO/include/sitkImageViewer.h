@@ -83,8 +83,8 @@ public:
    *
    * This command string may include the following %tokens:
    *
-   *      \li \c "%a"  for the ImageJ application
-   *      \li \c "%f"  for SimpleITK's temporary image file
+   * \li \c "%a" for the ImageJ application
+   * \li \c "%f" for SimpleITK's temporary image file
    *
    *  For example, the default command string on Linux systems is:
    *
@@ -137,8 +137,8 @@ public:
    * launch the viewing application.
    * @{
    */
-  void SetDebug( const bool dbg );
-  bool GetDebug() const;
+  static void SetDebug( const bool dbg );
+  static bool GetDebug();
   /**@}*/
 
   /** \brief Set/Get Title string on the ImageJ window.
@@ -157,16 +157,17 @@ private:
   static bool AreDefaultsInitialized;
   static std::string DefaultViewCommand;
   static std::string DefaultViewColorCommand;
-  static std::string DefaultFijiViewCommand;
+  static std::string DefaultFijiCommand;
   static std::vector<std::string> SearchPath;
   static std::vector<std::string> ExecutableNames;
   static std::string DefaultFileExtension;
   static std::string DefaultApplication;
+  static bool DebugOn;
 
 
   std::string viewCommand;
   std::string viewColorCommand;
-  std::string fijiViewCommand;
+  std::string fijiCommand;
   std::string customCommand;
 
   std::string application;
@@ -174,11 +175,10 @@ private:
   std::string fileExtension;
 
   std::string title;
-  bool debugOn;
 
   static void initializeDefaults();
 
-  static void FindViewingApplication();
+  static std::string FindViewingApplication();
 };
 
 }

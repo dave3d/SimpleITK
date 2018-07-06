@@ -37,7 +37,7 @@
 
 #define localDebugMacro(x)\
   {                                                                     \
-    if (debugOn)                                                        \
+    if (ImageViewer::DebugOn)                                                        \
       {                                                                 \
       std::ostringstream msg;                                           \
       msg << "Debug: In " __FILE__ ", line " << __LINE__ << ": " x      \
@@ -46,6 +46,9 @@
       }                                                                 \
   }                                                                     \
 
+#define IMAGEJ_OPEN_MACRO "open(\"%f\"); rename(\"%t\");"
+#define NIFTI_COLOR_MACRO " run(\"Make Composite\", \"display=Composite\");"
+
 namespace itk
 {
   namespace simple
@@ -53,16 +56,154 @@ namespace itk
 
 int ImageViewer::ViewerImageCount=0;
 bool ImageViewer::AreDefaultsInitialized=false;
+bool ImageViewer::DebugOn=true;
 
-std::vector<std::string> SearchPath;
-std::vector<std::string> ExecutableNames;
+std::vector<std::string> ImageViewer::SearchPath;
+std::vector<std::string> ImageViewer::ExecutableNames;
+
+std::string ImageViewer::DefaultViewCommand;
+std::string ImageViewer::DefaultViewColorCommand;
+std::string ImageViewer::DefaultFijiCommand;
+
+std::string ImageViewer::DefaultFileExtension;
 
 void ImageViewer::initializeDefaults()
   {
   if (AreDefaultsInitialized)
     return;
 
+  std::string Extension;
+  std::string cmd;
+
   // check environment variables for user specified strings
+
+  // File Extension
+  itksys::SystemTools::GetEnv ( "SITK_SHOW_EXTENSION", Extension );
+  if (Extension.length()>0)
+    {
+    DefaultFileExtension = Extension;
+    }
+  else
+    {
+    DefaultFileExtension = ".nii";
+    }
+
+  // Show command
+  itksys::SystemTools::GetEnv ( "SITK_SHOW_COMMAND", cmd );
+  if (cmd.length()>0)
+    {
+    DefaultViewCommand = cmd;
+    }
+  else
+    {
+#if defined(_WIN32)
+    DefaultViewCommand = "%a -eval \'" IMAGEJ_OPEN_MACRO "\'";
+#elif defined(__APPLE__)
+    DefaultViewCommand = "open -a %a -n --args -eval \'" IMAGEJ_OPEN_MACRO "\'";
+#else
+    // Linux
+    DefaultViewCommand = "%a -e \'" IMAGEJ_OPEN_MACRO "\'";
+#endif
+    }
+
+  // Show Color Command
+  itksys::SystemTools::GetEnv ( "SITK_SHOW_COLOR_COMMAND", cmd );
+  if (cmd.length()>0)
+    {
+    DefaultViewColorCommand = cmd;
+    }
+  else
+    {
+#if defined(_WIN32)
+    DefaultViewColorCommand = "%a -eval \'" IMAGEJ_OPEN_MACRO NIFTI_COLOR_MACRO "\'";
+#elif defined(__APPLE__)
+    DefaultViewCommand = "open -a %a -n --args -eval \'" IMAGEJ_OPEN_MACRO NIFTI_COLOR_MACRO "\'";
+#else
+    // Linux
+    DefaultViewCommand = "%a -e \'" IMAGEJ_OPEN_MACRO NIFTI_COLOR_MACRO "\'";
+#endif
+    }
+
+  // Fiji Command
+  //
+  // For Fiji, we only need 2 commands, not 6.  We don't need a separate command for color images.
+  // Also the linux version uses the "-eval" flag instead of "-e".
+#if defined(__APPLE__)
+  DefaultFijiCommand = "open -a %a -n --args -eval \'" IMAGEJ_OPEN_MACRO "\'";
+#else
+  // Linux & Windows
+  DefaultFijiCommand = "%a -eval \'" IMAGEJ_OPEN_MACRO "\'";
+#endif
+
+
+  //
+  // Build the SearchPath
+  //
+#ifdef _WIN32
+
+  std::string ProgramFiles;
+  if ( itksys::SystemTools::GetEnv ( "PROGRAMFILES", ProgramFiles ) )
+    {
+    SearchPath.push_back ( ProgramFiles + "\\" );
+    }
+
+  if ( itksys::SystemTools::GetEnv ( "PROGRAMFILES(x86)", ProgramFiles ) )
+    {
+    SearchPath.push_back ( ProgramFiles + "\\" );
+    }
+
+  if ( itksys::SystemTools::GetEnv ( "PROGRAMW6432", ProgramFiles ) )
+    {
+    SearchPath.push_back ( ProgramFiles + "\\" );
+    }
+
+  if ( itksys::SystemTools::GetEnv ( "USERPROFILE", ProgramFiles ) )
+    {
+    SearchPath.push_back ( ProgramFiles + "\\" );
+    SearchPath.push_back ( ProgramFiles + "\\Desktop\\" );
+    }
+
+#elif defined(__APPLE__)
+
+  // Common places on the Mac to look
+  SearchPath.push_back( "/Applications/" );
+  SearchPath.push_back( "/Developer/" );
+  SearchPath.push_back( "/opt/" );
+  SearchPath.push_back( "/usr/local/" );
+
+#else
+
+  // linux and other systems
+  SearchPath.push_back( "./" );
+  std::string homedir;
+  if ( itksys::SystemTools::GetEnv ( "HOME", homedir ) )
+    {
+    SearchPath.push_back( homedir + "/bin/" );
+    }
+
+  SearchPath.push_back( "/opt/" );
+  SearchPath.push_back( "/usr/local/" );
+
+#endif
+
+  localDebugMacro( << "Default search path: " << SearchPath << std::endl );
+
+  //
+  //  Set the ExecutableNames
+  //
+#if defined(_WIN32)
+  ExecutableNames.push_back( "Fiji.app/ImageJ-win64.exe" );
+  ExecutableNames.push_back( "Fiji.app/ImageJ-win32.exe" );
+  ExecutableNames.push_back( "ImageJ/ImageJ.exe" );
+#elif defined(__APPLE__)
+  ExecutableNames.push_back( "Fiji.app" );
+  ExecutableNames.push_back( "ImageJ/ImageJ64.app" );
+  ExecutableNames.push_back( "ImageJ/ImageJ.app" );
+#else
+  // Linux
+#endif
+
+  ImageViewer::FindViewingApplication();
 
   ViewerImageCount = 0;
   AreDefaultsInitialized = true;
@@ -78,25 +219,38 @@ ImageViewer::ImageViewer()
 
   viewCommand = DefaultViewCommand;
   viewColorCommand = DefaultViewColorCommand;
-  fijiViewCommand = DefaultFijiViewCommand;
+  fijiCommand = DefaultFijiCommand;
 
-
-  FindViewingApplication();
   customCommand = "";
   }
 
 
-void ImageViewer::FindViewingApplication()
+std::string ImageViewer::FindViewingApplication()
   {
-  std::string dir, name;
-  std::vector<std::string>::iterator dir_it, name_it;
+  std::string result;
+  std::vector<std::string>::iterator name_it;
 
-  for(dir_it = SearchPath.begin(); dir_it != SearchPath.end(); dir_it++)
+
+  for(name_it = ExecutableNames.begin(); name_it != ExecutableNames.end(); name_it++)
     {
-    for(name_it = ExecutableNames.begin(); name_it != ExecutableNames.end(); name_it++)
-      {
-      }
+#ifdef __APPLE__
+      result = itksys::SystemTools::FindDirectory ( (*name_it).c_str(), SearchPath );
+      if (!result.length())
+        {
+        // try looking for a file if no directory
+        result = itksys::SystemTools::FindFile ( (*name_it).c_str(), SearchPath );
+        }
+#else
+      result = itksys::SystemTools::FindFile ( (*name_it).c_str(), SearchPath );
+#endif
+      if (result.length())
+        {
+        break;
+        }
     }
+
+  localDebugMacro( << "FindViewingApplication: " << result << std::endl );
+  return result;
   }
 
 const std::vector<std::string>& ImageViewer::GetSearchPath()
@@ -147,12 +301,12 @@ const std::string & ImageViewer::GetFileExtension() const
 
 void ImageViewer::SetDebug( const bool dbg )
   {
-  debugOn = dbg;
+  DebugOn = dbg;
   }
 
-bool ImageViewer::GetDebug() const
+bool ImageViewer::GetDebug()
   {
-  return debugOn;
+  return DebugOn;
   }
 
 void ImageViewer::SetTitle(const std::string & t )
