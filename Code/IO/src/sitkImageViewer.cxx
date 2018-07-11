@@ -65,6 +65,7 @@ std::string ImageViewer::DefaultViewCommand;
 std::string ImageViewer::DefaultViewColorCommand;
 std::string ImageViewer::DefaultFijiCommand;
 
+std::string ImageViewer::DefaultApplication;
 std::string ImageViewer::DefaultFileExtension;
 
 void ImageViewer::initializeDefaults()
@@ -221,6 +222,10 @@ ImageViewer::ImageViewer()
   viewColorCommand = DefaultViewColorCommand;
   fijiCommand = DefaultFijiCommand;
 
+  application = DefaultApplication;
+
+  fileExtension = DefaultFileExtension;
+
   customCommand = "";
   }
 
@@ -261,7 +266,7 @@ const std::vector<std::string>& ImageViewer::GetSearchPath()
 void ImageViewer::SetSearchPath( const std::vector<std::string> & path )
   {
   ImageViewer::SearchPath = path;
-  FindViewingApplication();
+  ImageViewer::DefaultApplication = FindViewingApplication();
   }
 
 const std::vector<std::string>& ImageViewer::GetExecutableNames()
@@ -272,7 +277,7 @@ const std::vector<std::string>& ImageViewer::GetExecutableNames()
 void ImageViewer::SetExecutableNames( const std::vector<std::string> & names )
   {
   ImageViewer::ExecutableNames = names;
-  FindViewingApplication();
+  ImageViewer::DefaultApplication = FindViewingApplication();
   }
 
 void ImageViewer::SetCommand(const std::string & command )
@@ -317,6 +322,16 @@ void ImageViewer::SetTitle(const std::string & t )
 const std::string & ImageViewer::GetTitle() const
   {
   return title;
+  }
+
+void ImageViewer::SetApplication( const std::string & app )
+  {
+  application = app;
+  }
+
+const std::string & ImageViewer::GetApplication() const
+  {
+  return application;
   }
 
   } // namespace simple
