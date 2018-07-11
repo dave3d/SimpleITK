@@ -49,6 +49,21 @@
 #define IMAGEJ_OPEN_MACRO "open(\"%f\"); rename(\"%t\");"
 #define NIFTI_COLOR_MACRO " run(\"Make Composite\", \"display=Composite\");"
 
+
+namespace
+{
+  // forward declaration of some helper functions
+  std::string ReplaceWords( const std::string command, const std::string app, const std::string filename,
+                            const std::string title, bool& fileFlag );
+  std::string UnquoteWord( const std::string word );
+  std::vector<std::string> ConvertCommand( const std::string command, const std::string app, const std::string filename,
+                                           const std::string title="" );
+  std::string FormatFileName ( const std::string TempDirectory, const std::string name, const std::string extension,
+                               const int tagID );
+  std::string DoubleBackslashes( const std::string word );
+  std::string BuildFullFileName( const std::string name, const std::string extension, const int tagID );
+}
+
 namespace itk
 {
   namespace simple
@@ -258,6 +273,11 @@ std::string ImageViewer::FindViewingApplication()
   return result;
   }
 
+
+//
+// A bunch of Set/Get methods for the class
+//
+
 const std::vector<std::string>& ImageViewer::GetSearchPath()
   {
   return ImageViewer::SearchPath;
@@ -336,3 +356,280 @@ const std::string & ImageViewer::GetApplication() const
 
   } // namespace simple
 } // namespace itk
+
+
+//
+// Helper string, file name, and command string functions
+//
+
+namespace
+{
+
+// Function to replace %tokens in a string.  The tokens are %a and %f for
+// application and file name respectively.  %% will send % to the output string.
+// Multiple occurrences of a token are allowed.
+//
+std::string ReplaceWords( const std::string command,  const std::string app,  const std::string filename,
+                          const std::string title, bool& fileFlag )
+  {
+  std::string result;
+
+  unsigned int i=0;
+  while (i<command.length())
+    {
+
+    if (command[i] != '%')
+      {
+      result.push_back(command[i]);
+      }
+    else
+      {
+      if (i<command.length()-1)
+        {
+        // check the next character after the %
+        switch(command[i+1])
+          {
+          case '%':
+            // %%
+            result.push_back(command[i]);
+            i++;
+            break;
+          case 'a':
+            // %a for application
+            if (!app.length())
+              {
+              sitkExceptionMacro( "No ImageJ/Fiji application found." )
+              }
+            result.append(app);
+            i++;
+            break;
+          case 't':
+            // %t for title
+            result.append(title);
+            i++;
+            break;
+          case 'f':
+            // %f for filename
+            result.append(filename);
+            fileFlag = true;
+            i++;
+            break;
+          }
+
+        }
+      else
+        {
+        // if the % is the last character in the string just pass it through
+        result.push_back(command[i]);
+        }
+      }
+    i++;
+    }
+  return result;
+  }
+
+// Function to strip the matching leading and trailing quotes off a string
+// if there are any.  We need to do this because the way arguments are passed
+// to itksysProcess_Execute
+//
+std::string UnquoteWord( const std::string word )
+  {
+  size_t l = word.length();
+
+  if (l<2)
+    {
+    return word;
+    }
+
+  switch(word[0])
+    {
+
+    case '\'':
+    case '\"':
+      if (word[l-1] == word[0])
+        {
+        return word.substr(1, l-2);
+        }
+      else
+        {
+        return word;
+        }
+      break;
+
+    default:
+      return word;
+      break;
+    }
+  }
+
+std::vector<std::string> ConvertCommand( const std::string command, const std::string app, const std::string filename,
+                                         const std::string title )
+  {
+
+  std::string t;
+  if (title == "")
+    {
+    t = filename;
+    }
+  else
+    {
+    t = title;
+    }
+
+  bool fileFlag=false;
+  std::string new_command = ReplaceWords(command, app, filename, t, fileFlag);
+  std::istringstream iss(new_command);
+  std::vector<std::string> result;
+  std::vector<unsigned char> quoteStack;
+  std::string word;
+  unsigned int i=0;
+
+  while (i<new_command.length())
+    {
+    switch (new_command[i])
+      {
+
+      case '\'':
+      case '\"':
+        word.push_back(new_command[i]);
+        if (quoteStack.size())
+          {
+          if (new_command[i] == quoteStack[quoteStack.size()-1])
+            {
+            // we have a matching pair, so pop it off the stack
+            quoteStack.pop_back();
+            }
+          else
+            {
+            // the top of the stack and the new one don't match, so push it on
+            quoteStack.push_back(new_command[i]);
+            }
+          }
+        else
+          {
+          // quoteStack is empty so push this new quote on the stack.
+          quoteStack.push_back(new_command[i]);
+          }
+        break;
+
+      case ' ':
+        if (quoteStack.size())
+          {
+          // the space occurs inside a quote, so tack it onto the current word.
+          word.push_back(new_command[i]);
+          }
+        else
+          {
+          // the space isn't inside a quote, so we've ended a word.
+          word = UnquoteWord(word);
+          result.push_back(word);
+          word.clear();
+          }
+        break;
+
+      default:
+        word.push_back(new_command[i]);
+        break;
+      }
+    i++;
+
+    }
+
+  if (word.length())
+    {
+    word = UnquoteWord(word);
+    result.push_back(word);
+    }
+
+
+  // if the filename token wasn't found in the command string, add the filename to the end of the command vector.
+  if (!fileFlag)
+    {
+    result.push_back(filename);
+    }
+  return result;
+  }
+
+//
+std::string FormatFileName ( const std::string TempDirectory, const std::string name, const std::string extension,
+                             const int tagID )
+  {
+  std::string TempFile = TempDirectory;
+
+#ifdef _WIN32
+  int pid = _getpid();
+#else
+  int pid = getpid();
+#endif
+
+  std::ostringstream tmp;
+
+  if ( name != "" )
+    {
+    std::string n = name;
+    // remove whitespace
+    n.erase(std::remove_if(n.begin(), n.end(), &::isspace), n.end());
+
+    tmp << n << "-" << pid << "-" << tagID;
+    TempFile = TempFile + tmp.str() + extension;
+    }
+  else
+    {
+
+
+    tmp << "TempFile-" << pid << "-" << tagID;
+    TempFile = TempFile + tmp.str() + extension;
+    }
+  return TempFile;
+  }
+
+#if defined(_WIN32)
+  //
+  // Function that converts slashes or backslashes to double backslashes.  We need
+  // to do this so the file name is properly parsed by ImageJ if it's used in a macro.
+  //
+  std::string DoubleBackslashes(const std::string word)
+  {
+    std::string result;
+
+    for (unsigned int i=0; i<word.length(); i++)
+      {
+      // put in and extra backslash
+      if (word[i] == '\\' || word[i]=='/')
+        {
+        result.push_back('\\');
+        result.push_back('\\');
+        }
+      else
+        {
+        result.push_back(word[i]);
+        }
+      }
+
+    return result;
+  }
+#endif
+
+//
+//
+std::string BuildFullFileName(const std::string name, const std::string extension, const int tagID )
+  {
+  std::string TempDirectory;
+
+#ifdef _WIN32
+  if ( !itksys::SystemTools::GetEnv ( "TMP", TempDirectory )
+    && !itksys::SystemTools::GetEnv ( "TEMP", TempDirectory )
+    && !itksys::SystemTools::GetEnv ( "USERPROFILE", TempDirectory )
+    && !itksys::SystemTools::GetEnv ( "WINDIR", TempDirectory ) )
+    {
+    sitkExceptionMacro ( << "Can not find temporary directory.  Tried TMP, TEMP, USERPROFILE, and WINDIR environment variables" );
+    }
+  TempDirectory = TempDirectory + "\\";
+  TempDirectory = DoubleBackslashes(TempDirectory);
+#else
+  TempDirectory = "/tmp/";
+#endif
+  return FormatFileName ( TempDirectory, name, extension, tagID );
+  }
+
+}
