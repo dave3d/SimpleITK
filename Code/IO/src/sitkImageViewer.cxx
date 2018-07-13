@@ -37,7 +37,7 @@
 
 #define localDebugMacro(x)\
   {                                                                     \
-    if (ImageViewer::DebugOn)                                                        \
+    if (itk::simple::ImageViewer::GetDebug())                                                        \
       {                                                                 \
       std::ostringstream msg;                                           \
       msg << "Debug: In " __FILE__ ", line " << __LINE__ << ": " x      \
@@ -49,6 +49,10 @@
 #define IMAGEJ_OPEN_MACRO "open(\"%f\"); rename(\"%t\");"
 #define NIFTI_COLOR_MACRO " run(\"Make Composite\", \"display=Composite\");"
 
+namespace itk
+{
+  namespace simple
+  {
 
 namespace
 {
@@ -60,29 +64,34 @@ namespace
                                            const std::string title="" );
   std::string FormatFileName ( const std::string TempDirectory, const std::string name, const std::string extension,
                                const int tagID );
-  std::string DoubleBackslashes( const std::string word );
   std::string BuildFullFileName( const std::string name, const std::string extension, const int tagID );
+#ifdef _WIN32
+  std::string DoubleBackslashes( const std::string word );
+#endif
+
+  void ExecuteCommand( const std::vector<std::string> & cmdLine, const unsigned int timeout=500 );
 }
 
-namespace itk
-{
-  namespace simple
-  {
 
 int ImageViewer::ViewerImageCount=0;
 bool ImageViewer::AreDefaultsInitialized=false;
 bool ImageViewer::DebugOn=true;
+unsigned int ImageViewer::ProcessDelay;
 
 std::vector<std::string> ImageViewer::SearchPath;
 std::vector<std::string> ImageViewer::ExecutableNames;
 
 std::string ImageViewer::DefaultViewCommand;
 std::string ImageViewer::DefaultViewColorCommand;
+std::string ImageViewer::DefaultView3DCommand;
 std::string ImageViewer::DefaultFijiCommand;
 
 std::string ImageViewer::DefaultApplication;
 std::string ImageViewer::DefaultFileExtension;
 
+//
+// this is an ugly mess
+//
 void ImageViewer::initializeDefaults()
   {
   if (AreDefaultsInitialized)
@@ -122,6 +131,17 @@ void ImageViewer::initializeDefaults()
 #endif
     }
 
+  // Show 3D command
+  itksys::SystemTools::GetEnv ( "SITK_SHOW_3D_COMMAND", cmd );
+  if (cmd.length()>0)
+    {
+    DefaultView3DCommand = cmd;
+    }
+  else
+    {
+    DefaultView3DCommand = DefaultViewCommand;
+    }
+
   // Show Color Command
   itksys::SystemTools::GetEnv ( "SITK_SHOW_COLOR_COMMAND", cmd );
   if (cmd.length()>0)
@@ -158,19 +178,14 @@ void ImageViewer::initializeDefaults()
 #ifdef _WIN32
 
   std::string ProgramFiles;
-  if ( itksys::SystemTools::GetEnv ( "PROGRAMFILES", ProgramFiles ) )
-    {
-    SearchPath.push_back ( ProgramFiles + "\\" );
-    }
+  std::vector<std::string> win_dirs = { "PROGRAMFILES", "PROGRAMFILES(x86)", "PROGRAMW6432" };
 
-  if ( itksys::SystemTools::GetEnv ( "PROGRAMFILES(x86)", ProgramFiles ) )
+  for (int i=0; i<win_dirs.size(); i++)
     {
-    SearchPath.push_back ( ProgramFiles + "\\" );
-    }
-
-  if ( itksys::SystemTools::GetEnv ( "PROGRAMW6432", ProgramFiles ) )
-    {
-    SearchPath.push_back ( ProgramFiles + "\\" );
+    if ( itksys::SystemTools::GetEnv ( win_dirs[i], ProgramFiles ) )
+      {
+      SearchPath.push_back ( ProgramFiles + "\\" );
+      }
     }
 
   if ( itksys::SystemTools::GetEnv ( "USERPROFILE", ProgramFiles ) )
@@ -182,10 +197,7 @@ void ImageViewer::initializeDefaults()
 #elif defined(__APPLE__)
 
   // Common places on the Mac to look
-  SearchPath.push_back( "/Applications/" );
-  SearchPath.push_back( "/Developer/" );
-  SearchPath.push_back( "/opt/" );
-  SearchPath.push_back( "/usr/local/" );
+  SearchPath = { "/Applications/", "/Developer/", "/opt/", "/usr/local/" };
 
 #else
 
@@ -219,12 +231,21 @@ void ImageViewer::initializeDefaults()
   // Linux
 #endif
 
+#ifdef _WIN32
+  ProcessDelay = 1;
+#else
+  ProcessDelay = 500;
+#endif
+
   ImageViewer::FindViewingApplication();
 
   ViewerImageCount = 0;
   AreDefaultsInitialized = true;
   }
 
+//
+// Constructor
+//
 ImageViewer::ImageViewer()
   {
 
@@ -234,6 +255,7 @@ ImageViewer::ImageViewer()
     }
 
   viewCommand = DefaultViewCommand;
+  view3DCommand = DefaultView3DCommand;
   viewColorCommand = DefaultViewColorCommand;
   fijiCommand = DefaultFijiCommand;
 
@@ -334,6 +356,16 @@ bool ImageViewer::GetDebug()
   return DebugOn;
   }
 
+void ImageViewer::SetProcessDelay( const unsigned int d )
+  {
+  ProcessDelay = d;
+  }
+
+unsigned int ImageViewer::GetProcessDelay()
+  {
+  return ProcessDelay;
+  }
+
 void ImageViewer::SetTitle(const std::string & t )
   {
   title = t;
@@ -354,16 +386,191 @@ const std::string & ImageViewer::GetApplication() const
   return application;
   }
 
-  } // namespace simple
-} // namespace itk
-
 
 //
-// Helper string, file name, and command string functions
+// The Execute method
 //
+
+void ImageViewer::Execute( const Image & image )
+  {
+  // Try to find ImageJ, write out a file and open
+  std::string Command, Command3D;
+  std::string TempFile = "";
+  std::string Macro = "";
+  std::vector<std::string> CommandLine;
+
+  TempFile = BuildFullFileName(title, fileExtension, ViewerImageCount++);
+
+  // write out the image
+  WriteImage ( image, TempFile );
+
+  if (customCommand.length())
+    {
+    Command = customCommand;
+    }
+  else
+    {
+
+    // all this stuff is for when there isn't a user specified custom command
+
+
+
+
+#if !defined(__APPLE__) && !defined(_WIN32)
+    // is the imagej we're running a script or a binary?
+    // only done on Linux/*nix
+    bool ImageJScriptFlag = itksys::SystemTools::FileHasSignature( ExecutableName.c_str(), "#!" );
+#endif
+
+    bool fijiFlag = application.find( "Fiji.app" ) != std::string::npos;
+
+    if (fijiFlag)
+      {
+      Command = fijiCommand;
+      }
+    else
+      {
+      // If the image is 3 channel, 8 or 16 bit, assume it's a color image.
+      //
+      bool colorFlag = ( (image.GetNumberOfComponentsPerPixel() == 3)
+                         && ((image.GetPixelIDValue() == sitkVectorUInt8)
+                         || (image.GetPixelIDValue() == sitkVectorUInt16)) );
+      if (colorFlag)
+        {
+        Command = viewColorCommand;
+        }
+      else
+        {
+        Command = viewCommand;
+        }
+      }
+
+
+    if (image.GetDimension() == 3)
+      {
+      Command = view3DCommand;
+      }
+
+    }
+
+
+  // Replace the string tokens and split the command string into separate words.
+  CommandLine = ConvertCommand(Command, application, TempFile, title);
+
+  // run the compiled command-line in a process which will detach
+  ExecuteCommand( CommandLine, ImageViewer::GetProcessDelay() );
+  }
+
+
 
 namespace
 {
+
+//
+// ExecuteCommand function
+//
+
+  /**
+   * This function take a list of command line arguments, and runs a
+   * process based on it. It waits for a fraction of a second before
+   * checking it's state, to verify it was launched OK.
+   */
+void ExecuteCommand( const std::vector<std::string> & cmdLine, const unsigned int timeout )
+  {
+  unsigned int i;
+  std::ostringstream cmdstream;
+
+  for ( i = 0; i < cmdLine.size(); ++i )
+    cmdstream << '\'' << cmdLine[i] << "\' ";
+
+  localDebugMacro( << "Show command: " << cmdstream.str() << std::endl );
+
+  std::vector<const char*> cmd( cmdLine.size() + 1, NULL );
+
+  for ( i = 0; i < cmdLine.size(); ++i )
+    {
+    cmd[i] = cmdLine[i].c_str();
+    }
+
+  itksysProcess *kp = itksysProcess_New();
+
+  itksysProcess_SetCommand( kp, &cmd[0] );
+
+  itksysProcess_SetOption( kp, itksysProcess_Option_Detach, 1 );
+
+  // For detached processes, this appears not to be the default
+  itksysProcess_SetPipeShared( kp, itksysProcess_Pipe_STDERR, 1);
+  itksysProcess_SetPipeShared( kp, itksysProcess_Pipe_STDOUT, 1);
+
+  itksysProcess_Execute( kp );
+
+  // Wait one second then check to see if we launched ok.
+  // N.B. Because the launched process may spawn a child process for
+  // the acutal application we want, this methods is needed to be
+  // called before the GetState, so that we get more then the
+  // immediate result of the initial execution.
+  double t = timeout;
+  itksysProcess_WaitForExit( kp, &t );
+
+
+  switch (itksysProcess_GetState(kp))
+    {
+    case itksysProcess_State_Executing:
+      // This first case is what we expect if everything went OK.
+
+      // We want the other process to continue going
+      itksysProcess_Delete( kp ); // implicitly disowns
+      break;
+
+    case itksysProcess_State_Exited:
+      {
+      int exitValue = itksysProcess_GetExitValue(kp);
+      if ( exitValue != 0 )
+        {
+        sitkExceptionMacro (  << "Process returned " << exitValue << ".\n" << "Command line: " << cmdstream.str() );
+        }
+      }
+      break;
+
+    case itksysProcess_State_Killed:
+      itksysProcess_Delete( kp );
+      sitkExceptionMacro (  << "Child was killed by parent." << "\nCommand line: " << cmdstream.str() );
+      break;
+
+    case itksysProcess_State_Exception:
+      {
+      std::string exceptionString = itksysProcess_GetExceptionString(kp);
+      itksysProcess_Delete( kp );
+      sitkExceptionMacro (  << "Child terminated abnormally: " << exceptionString << ".\nCommand line: " << cmdstream.str() );
+      }
+      break;
+
+    case itksysProcess_State_Error:
+      {
+      std::string errorString = itksysProcess_GetErrorString(kp);
+      itksysProcess_Delete( kp );
+      sitkExceptionMacro (  << "Error in administrating child process: [" << errorString << "]" << ".\nCommand line: " << cmdstream.str() );
+      }
+      break;
+
+    // these states should not occur, because they are the result
+    // from actions we don't take
+    case itksysProcess_State_Expired:
+    case itksysProcess_State_Disowned:
+    case itksysProcess_State_Starting:
+    default:
+      itksysProcess_Delete( kp );
+      sitkExceptionMacro (  << "Unexpected process state!" << "\nCommand line: " << cmdstream.str() );
+    }
+  }
+
+
+
+//
+// ------------------------------------------------------
+// Helper string, file name, and command string functions
+//
+
 
 // Function to replace %tokens in a string.  The tokens are %a and %f for
 // application and file name respectively.  %% will send % to the output string.
@@ -633,3 +840,6 @@ std::string BuildFullFileName(const std::string name, const std::string extensio
   }
 
 }
+
+  } // namespace simple
+} // namespace itk
