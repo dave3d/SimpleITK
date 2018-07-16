@@ -141,6 +141,16 @@ public:
   static bool GetDebug();
   /**@}*/
 
+  /** \brief Set/Get Process delay, the wait time after launching the viewing application.
+   *
+   * On Windows the delay is in seconds, default=1sec.
+   * On Mac/Linux the delay is in milli-seconds, default=500ms.
+   * @{
+   */
+  static void SetProcessDelay( const unsigned int delay);
+  static unsigned int GetProcessDelay();
+  /**@}*/
+
   /** \brief Set/Get Title string on the ImageJ window.
    * @{
    */
@@ -157,15 +167,18 @@ private:
   static bool AreDefaultsInitialized;
   static std::string DefaultViewCommand;
   static std::string DefaultViewColorCommand;
+  static std::string DefaultView3DCommand;
   static std::string DefaultFijiCommand;
   static std::vector<std::string> SearchPath;
   static std::vector<std::string> ExecutableNames;
   static std::string DefaultFileExtension;
   static std::string DefaultApplication;
   static bool DebugOn;
+  static unsigned int ProcessDelay;
 
 
   std::string viewCommand;
+  std::string view3DCommand;
   std::string viewColorCommand;
   std::string fijiCommand;
   std::string customCommand;
