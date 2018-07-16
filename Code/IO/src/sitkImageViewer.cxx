@@ -35,6 +35,7 @@
 #include <unistd.h>
 #endif
 
+
 #define localDebugMacro(x)\
   {                                                                     \
     if (itk::simple::ImageViewer::GetDebug())                                                        \
@@ -291,6 +292,22 @@ std::string ImageViewer::FindViewingApplication()
         }
     }
 
+#if !defined(__APPLE__) && !defined(_WIN32)
+    // is the imagej we're running a script or a binary?
+    // only done on Linux/*nix
+    //
+    // some installations of ImageJ have a shell script front-end.  That script uses the "-eval"
+    // command-line option instead of "-e".
+    //
+    bool ImageJScriptFlag = itksys::SystemTools::FileHasSignature( result.c_str(), "#!" );
+    if (ImageJScriptFlag)
+      {
+      DefaultViewCommand = "%a -eval \'" IMAGEJ_OPEN_MACRO "\'";
+      DefaultView3DCommand = DefaultViewCommand;
+      DefaultViewColorCommand = "%a -eval \'" IMAGEJ_OPEN_MACRO NIFTI_COLOR_MACRO "\'";
+      }
+#endif
+
   localDebugMacro( << "FindViewingApplication: " << result << std::endl );
   return result;
   }
@@ -415,12 +432,6 @@ void ImageViewer::Execute( const Image & image )
 
 
 
-
-#if !defined(__APPLE__) && !defined(_WIN32)
-    // is the imagej we're running a script or a binary?
-    // only done on Linux/*nix
-    bool ImageJScriptFlag = itksys::SystemTools::FileHasSignature( ExecutableName.c_str(), "#!" );
-#endif
 
     bool fijiFlag = application.find( "Fiji.app" ) != std::string::npos;
 
