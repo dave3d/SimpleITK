@@ -238,7 +238,7 @@ void ImageViewer::initializeDefaults()
   ProcessDelay = 500;
 #endif
 
-  ImageViewer::FindViewingApplication();
+  ImageViewer::DefaultApplication = ImageViewer::FindViewingApplication();
 
   ViewerImageCount = 0;
   AreDefaultsInitialized = true;
@@ -494,7 +494,7 @@ void ExecuteCommand( const std::vector<std::string> & cmdLine, const unsigned in
   for ( i = 0; i < cmdLine.size(); ++i )
     cmdstream << '\'' << cmdLine[i] << "\' ";
 
-  localDebugMacro( << "Show command: " << cmdstream.str() << std::endl );
+  localDebugMacro( << "ExecuteCommand: " << cmdstream.str() << std::endl );
 
   std::vector<const char*> cmd( cmdLine.size() + 1, NULL );
 
