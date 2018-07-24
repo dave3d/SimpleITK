@@ -254,7 +254,7 @@ void ImageViewer::initializeDefaults()
 ImageViewer::ImageViewer()
   {
 
-  if (not AreDefaultsInitialized)
+  if (!AreDefaultsInitialized)
     {
     initializeDefaults();
     }
