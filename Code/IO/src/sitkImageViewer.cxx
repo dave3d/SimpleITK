@@ -230,6 +230,10 @@ void ImageViewer::initializeDefaults()
   ExecutableNames.push_back( "ImageJ/ImageJ.app" );
 #else
   // Linux
+  ExecutableNames.push_back( "Fiji.app/ImageJ-linux64" );
+  ExecutableNames.push_back( "Fiji.app/ImageJ-linux32" );
+  ExecutableNames.push_back( "ImageJ/ImageJ" );
+  ExecutableNames.push_back( "ImageJ" );
 #endif
 
 #ifdef _WIN32
