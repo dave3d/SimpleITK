@@ -33,11 +33,22 @@ int main (int argc, char *argv[])
   std::cout << "Starting sitkShowTest\n";
 
   sitk::ImageViewer iv;
-  sitk::Image i2 (100,100,sitk::sitkUInt8);
-  iv.SetDebug(true);
-  iv.SetTitle("Tar Heels");
-  iv.Execute(i2);
-  std::exit(0);
+  sitk::Image i2( 100,100,sitk::sitkUInt8 );
+  iv.SetDebug( true );
+  EXPECT_TRUE( iv.GetDebug() );
+  iv.SetTitle( "sitkShowTest" );
+  EXPECT_EQ( iv.GetTitle(), "sitkShowTest" );
+
+  try
+    {
+    iv.Execute( i2 );
+    }
+  catch ( std::exception &e )
+    {
+    std::cout << "Exception: " << e.what() << std::endl;
+    return EXIT_FAILURE;
+    }
+  return ( 0 );
 
   if (argc > 1)
     {
