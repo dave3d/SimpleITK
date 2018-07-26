@@ -36,9 +36,22 @@
 #endif
 
 
+//
+//  Dave's mental notes about ImageJ/Fiji and file formats
+//
+// ImageJ without plugins doesn't support MetaIO.
+// ImageJ displaying a color NifTi image by defaults displays R, G, and B as separate channels.
+// To display color NifTi images properly in ImageJ, you need to use the NIFTI_COLOR_MACRO
+//
+// Fiji does support MetaIO.
+// Fiji has the same color NifTi problem as ImageJ.
+//
+// Invoking Fiji is simpler then ImageJ because the command line flags are the
+// same on Windows and Linux.
+
 #define localDebugMacro(x)\
   {                                                                     \
-    if (itk::simple::ImageViewer::GetDebug())                                                        \
+    if (itk::simple::ImageViewer::GetDebug())                           \
       {                                                                 \
       std::ostringstream msg;                                           \
       msg << "Debug: In " __FILE__ ", line " << __LINE__ << ": " x      \
@@ -266,7 +279,7 @@ ImageViewer::ImageViewer()
 
   application = DefaultApplication;
 
-  fileExtension = DefaultFileExtension;
+  fileExtension = "";
 
   customCommand = "";
   }
@@ -364,7 +377,11 @@ void ImageViewer::SetFileExtension(const std::string & ext )
 
 const std::string & ImageViewer::GetFileExtension() const
   {
-  return fileExtension;
+  if (fileExtension.length())
+    {
+    return fileExtension;
+    }
+  return DefaultFileExtension;
   }
 
 void ImageViewer::SetDebug( const bool dbg )
@@ -419,8 +436,27 @@ void ImageViewer::Execute( const Image & image )
   std::string TempFile = "";
   std::string Macro = "";
   std::vector<std::string> CommandLine;
+  std::string ext;
 
-  TempFile = BuildFullFileName(title, fileExtension, ViewerImageCount++);
+  bool fijiFlag = application.find( "Fiji.app" ) != std::string::npos;
+
+  if (fileExtension.length())
+    {
+    ext = fileExtension;
+    }
+  else
+    {
+    if (fijiFlag)
+      {
+      ext = ".mha";
+      }
+    else
+      {
+      ext = DefaultFileExtension;
+      }
+    }
+
+  TempFile = BuildFullFileName(title, ext, ViewerImageCount++);
 
   // write out the image
   WriteImage ( image, TempFile );
@@ -437,7 +473,6 @@ void ImageViewer::Execute( const Image & image )
 
 
 
-    bool fijiFlag = application.find( "Fiji.app" ) != std::string::npos;
 
     if (fijiFlag)
       {
