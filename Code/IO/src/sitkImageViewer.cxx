@@ -18,6 +18,8 @@
 #include "sitkImageViewer.h"
 #include "sitkMacro.h"
 #include "sitkImageFileWriter.h"
+#include "itkLogger.h"
+#include "itkStdStreamLogOutput.h"
 #include <itkMacro.h>
 #include <itksys/SystemTools.hxx>
 #include <itksys/Process.h>
@@ -49,6 +51,7 @@
 // Invoking Fiji is simpler then ImageJ because the command line flags are the
 // same on Windows and Linux.
 
+itk::Logger::Pointer logger;
 #define localDebugMacro(x)\
   {                                                                     \
     if (itk::simple::ImageViewer::GetDebug())                           \
@@ -56,12 +59,13 @@
       std::ostringstream msg;                                           \
       msg << "Debug: In " __FILE__ ", line " << __LINE__ << ": " x      \
           << "\n\n";                                                    \
-      ::itk::OutputWindowDisplayDebugText( msg.str().c_str() );         \
+      logger->Info( msg.str() );         \
       }                                                                 \
   }                                                                     \
 
 #define IMAGEJ_OPEN_MACRO "open(\"%f\"); rename(\"%t\");"
 #define NIFTI_COLOR_MACRO " run(\"Make Composite\", \"display=Composite\");"
+
 
 namespace itk
 {
@@ -110,6 +114,16 @@ void ImageViewer::initializeDefaults()
   {
   if (AreDefaultsInitialized)
     return;
+
+  itk::StdStreamLogOutput::Pointer coutput = itk::StdStreamLogOutput::New();
+  coutput->SetStream(std::cout);
+  logger = itk::Logger::New();
+  logger->SetName("org.sitk.showLogger");
+  logger->SetPriorityLevel(itk::LoggerBase::INFO);
+  logger->SetLevelForFlushing(itk::LoggerBase::CRITICAL);
+  logger->AddLogOutput(coutput);
+
+
 
   std::string Extension;
   std::string cmd;
